@@ -4,6 +4,26 @@ var jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const express = require('express');
 const app = express()
+const helmet = require('helmet');
+
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'"],
+            styleSrc: ["'self'", "https:"],
+            imgSrc: ["'self'", "data:"],
+            connectSrc: ["'self'"],
+            fontSrc: ["'self'", "https:"],
+            objectSrc: ["'none'"],
+            upgradeInsecureRequests: [],
+        },
+    },
+    frameguard: { action: 'deny' },     
+    referrerPolicy: { policy: 'no-referrer' },
+    crossOriginEmbedderPolicy: true,  
+    crossOriginResourcePolicy: { policy: 'same-origin' },
+}));
 
 const authentification = require('./middlewares/authentification');
 const validation = require('./middlewares/validation');
@@ -26,7 +46,6 @@ if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
 //     }
 // ]
 
-app.use(express.json())
 
 const sqlite3 = require('sqlite3').verbose()
 const db = new sqlite3.Database('./database.db')
