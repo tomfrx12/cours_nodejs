@@ -2,10 +2,15 @@ require('dotenv').config();
 
 var jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
-const express = require('express')
+const express = require('express');
 const app = express()
 
 const authentification = require('./middlewares/authentification');
+const validation = require('./middlewares/validation');
+
+const SigninSchema = require('./validators/signin');
+const LoginSchema = require('./validators/login');
+
 
 if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
     console.error('FATAL: JWT_SECRET manquant en production — arrêt du processus.')
@@ -54,8 +59,6 @@ app.get('/api/protected', authentification, (req, res) => {
     })
 })
 
-// SELECT * FROM users
-
 // app.get('/api/:id', (req, res) => {
 //     const id = parseInt(req.params.id)
 //     const item = data.find(item => item.id === id)
@@ -75,51 +78,6 @@ app.get('/api/:id', (req, res) => {
     });
 });
 
-// SELECT * FROM users WHERE id=1
-
-app.post('/api/signin', async (req, res) => {
-    const salt = 10;
-    const PlainPassword = (`${req.body.password}`)
-    const hash = await bcrypt.hashSync(PlainPassword, salt);
-
-    db.get('SELECT * FROM users WHERE username= ?', [req.body.username], (err, row) => {
-        if (err) {
-            return res.statusMessage(500).json({erreur: err.message});
-        } 
-        else if (row) {
-            res.send(`L'utilisateur ${req.body.username} existe déjà`)
-        } 
-        else {
-            db.run('INSERT INTO users (email, username, password) VALUES (?, ?, ?)', [req.body.email, req.body.username, hash], (err, row) => {
-                if (err) {
-                    return res.status(500).json({ erreur: err.message });
-                }
-                else {
-                    res.send(`L'username ${req.body.username} à été ajouté`)
-                }
-            })
-        }
-    })
-});
-
-app.post('/api/login', async (req, res) => {
-    const {email, password} = req.body;
-
-    await db.get('SELECT * FROM users WHERE email = ?', [email], async (err, row) => {
-        if (!row) {
-            return res.status(401).json({message: "Email incorrect"});
-        }
-
-        const valide = await bcrypt.compare(password, row.password);
-        if (!valide) {
-            return res.status(401).json({ message: "Mot de passe incorrect"});
-        }
-    
-        const token = jwt.sign({users: email}, process.env.JWT_SECRET, { expiresIn: '2h'})
-        res.send(token)
-    });
-})
-
 // app.post('/api/:id', (req, res) => {
 //     db.run('INSERT INTO users (id, username, password) VALUES (?, ?, ?)', [req.body.id, req.body.username, req.body.password], (err, rows) => {
 //         if (err) {
@@ -129,7 +87,41 @@ app.post('/api/login', async (req, res) => {
 //     })
 // })
 
-// INSERT INTO users (username, password) VALUES ('d', 'dd')
+app.post('/api/signin', validation(SigninSchema), async (req, res) => {
+    try {
+        const hash = await bcrypt.hashSync(req.validated.password, 10);
+    
+        db.get('SELECT * FROM users WHERE username = ? OR email = ?', [req.validated.username, req.validated.email], (err, row) => {
+            if (err) return res.statusMessage(500).json({erreur: err.message})
+            if (row) return res.send(`L'email ou le username existe déjà`)
+    
+            db.run('INSERT INTO users (email, password, username) VALUES (?, ?, ?)', [req.validated.email, hash, req.validated.username], (err) => {
+                if (err) return res.status(500).json({ erreur: err.message })
+                else {
+                    res.send(`L'username ${req.validated.username} à été ajouté`)
+                }
+            })
+        })
+    } catch (err) {
+        return res.status(500).json({ erreur: err.message });
+    }
+});
+
+app.post('/api/login', validation(LoginSchema), async (req, res) => {
+    await db.get('SELECT * FROM users WHERE email = ?', [req.validated.email], async (err, row) => {
+        if (!row) {
+            return res.status(401).json({message: "Email incorrect"});
+        }
+
+        const valide = await bcrypt.compare(req.validated.password, row.password);
+        if (!valide) {
+            return res.status(401).json({ message: "Mot de passe incorrect"});
+        }
+    
+        const token = jwt.sign({users: req.validated.email}, process.env.JWT_SECRET, { expiresIn: '2h'})
+        res.send(token)
+    });
+})
 
 app.put('/api/:id', (req, res) => {
     db.run('UPDATE users SET username = ? WHERE id = ?', [req.body.username, req.params.id], (err, row) => {
@@ -140,8 +132,6 @@ app.put('/api/:id', (req, res) => {
     })
 })
 
-// UPDATE users SET username='e' WHERE id=1
-
 app.delete('/api/:id', (req, res) => {
     db.run('DELETE FROM users WHERE id = ?', [req.params.id], (err, row) => {
         if (err) {
@@ -150,7 +140,5 @@ app.delete('/api/:id', (req, res) => {
         res.send(`L'id: ${req.params.id} à été supprimé`)
     });
 });
-
-// DELETE FROM users WHERE id=1
 
 app.listen(process.env.PORT, () => {})

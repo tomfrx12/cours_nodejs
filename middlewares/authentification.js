@@ -16,6 +16,7 @@ function authentification(req, res, next) {
     //     req.user = user;
     //     next()
     // });
+    // doesnt work
     try {
         req.user = jwt.verify(token, process.env.JWT_SECRET)
         next()
